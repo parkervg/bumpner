@@ -1,0 +1,30 @@
+PERSON:
+  description: People, including fictional.
+  CELEBRITY:
+    description: A famous person.
+    SINGER:
+      description: A musician who is well-known as a singer, like Michael Jackson
+      rules:
+        keyword:
+            - elton john
+            - drake
+    ACTOR:
+      description: A person who is well-know for their acting in movies or TV shows.
+  GENERIC_PERSON:
+    description: A person, who we don't really recognize
+
+PRODUCT:
+  description: Products offered by a company.
+  rules:
+    keyword:
+      - conversion gel
+      - handheld portal gun
+
+ORG:
+  description: Companies, agencies, institutions, etc.
+
+IDNUMBER:
+  description: Identifier for Aperture Science employees
+  rules:
+    regex:
+      - s\d{2}\w{3}

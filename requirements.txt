@@ -1,0 +1,9 @@
+guidance
+transformers
+pydantic
+attrs
+llama-cpp-python==0.2.75
+pyyaml
+flashtext
+dotenv
+tabulate
