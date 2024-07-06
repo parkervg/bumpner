@@ -396,8 +396,11 @@ class Bumpner:
         self.entity_objs = []
         self.entity_label_tree = {}
         self.entity_name_to_obj = {}
-        with open(self.yaml_filepath, "r") as f:
-            self.entities: dict = yaml.safe_load(f)
+        try:
+            with open(self.yaml_filepath, "r") as f:
+                self.entities: dict = yaml.safe_load(f)
+        except OSError:
+            self.entities: dict = yaml.safe_load(self.yaml_filepath)
         self.keyword_processor = KeywordProcessor(case_sensitive=False)
         self.register_entities(entities=self.entities, lowercase=self.lowercase)
         self._partial_model = self.get_partial_model()
