@@ -16,7 +16,7 @@ import operator
 from bisect import bisect_left
 from tabulate import tabulate
 from functools import partial
-
+from pathlib import Path
 # https://alibaba-cloud.medium.com/why-you-should-use-flashtext-instead-of-regex-for-data-analysis-960a0dc96c6a
 from flashtext import KeywordProcessor
 import guidance
@@ -90,7 +90,7 @@ class Word(str):
         return len(self.text)
 
 
-class Text(MutableSequence):
+class Text(MutableSequence): # type: ignore
     def __init__(self, *args):
         self.list: List[Word] = list()
         prefix_len = 0
@@ -172,16 +172,12 @@ class Text(MutableSequence):
             └────────────┴────────────────────────┘
             ```
         """
-        import pandas as pd
-
         print(
             tabulate(
-                pd.DataFrame(
-                    {
-                        "word": [i.text for i in self.list],
-                        "label": [i.label for i in self.list],
-                    }
-                )
+                {
+                    "word": [i.text for i in self.list],
+                    "label": [i.label for i in self.list],
+                }
             )
         )
 
@@ -218,12 +214,12 @@ class Text(MutableSequence):
         return self.string
 
 
-@guidance(stateless=True)
+@guidance(stateless=True) # type: ignore
 def intro_prompt(lm: Model, entity_objs: List[Entity], few_shot: Optional[str] = None):
     lm += dedent(
         f"""
-    Tag each word in the input with an entity type. 
-    If none apply, use the tag 'O' to denote "no entity". Most words will have this 'O' label. 
+    Tag each word in the input with an entity type.
+    If none apply, use the tag 'O' to denote "no entity". Most words will have this 'O' label.
 
     Below is a description of each entity type.
     """
@@ -239,7 +235,7 @@ def intro_prompt(lm: Model, entity_objs: List[Entity], few_shot: Optional[str] =
     return lm
 
 
-@guidance(stateless=True)
+@guidance(stateless=True) # type: ignore
 def inference_prompt(lm: Model, text: Text):
     lm += dedent(
         f"""
@@ -251,15 +247,15 @@ def inference_prompt(lm: Model, text: Text):
     return lm
 
 
-@guidance
+@guidance # type: ignore
 def constrained_ner(
     lm: Model,
     text: Text,
     entity_label_tree: dict,
     entity_name_to_obj: Dict[str, Entity],
-    keyword_to_entity_label: Dict[str, str] = None,
-    pattern_to_entity_label: Dict[re.Pattern, str] = None,
-    keyword_processor: KeywordProcessor = None,
+    keyword_to_entity_label: Optional[Dict[str, str]] = None,
+    pattern_to_entity_label: Optional[Dict[re.Pattern, str]] = None,
+    keyword_processor: Optional[KeywordProcessor] = None,
     skip_stopwords: bool = True,
 ):
     """This function actually passes the input text to the underlying LLM.
@@ -302,12 +298,13 @@ def constrained_ner(
                     temperature=0.0,
                 )
             )
-            if entity_label_tree.get(lm["curr_entity_label"], None) is not None:
+            chosen_subtree: Union[dict, None] = entity_label_tree.get(lm["curr_entity_label"], None)
+            if chosen_subtree is not None:
                 chained_sub_entity_key = f"{lm['curr_entity_label']}"
                 while entity_label_tree.get(chained_sub_entity_key, None) is not None:
                     # Predict our sub-entities until we reach a terminal
                     valid_child_entity_names = list(
-                        entity_label_tree.get(lm["curr_entity_label"]).keys()
+                        chosen_subtree.keys()
                     )
                     child_entities: List[Entity] = []
                     for c in valid_child_entity_names:
@@ -317,7 +314,7 @@ def constrained_ner(
                             ]
                         )
                     # 2b) Add our child entity descriptions, and make a prediction
-                    lm += add_child_entity_observations(child_entities)
+                    lm += add_child_entity_observations(child_entities) # type: ignore
                     lm += CHILD_ENTITY_SPLIT + with_temperature(
                         select(valid_child_entity_names, name="curr_entity_label"),
                         temperature=0.0,
@@ -332,7 +329,7 @@ def constrained_ner(
     return lm
 
 
-@guidance
+@guidance # type: ignore
 def add_child_entity_observations(lm: Model, child_entities: List[Entity]):
     """Generates an internal 'thought' containing sub-entity labels and descriptions,
     enclosed in specified begin + end tags (typically xml-style)
@@ -351,7 +348,7 @@ def add_child_entity_observations(lm: Model, child_entities: List[Entity]):
 @attrs
 class Bumpner:
     model: Model = attrib()
-    yaml_filepath: str = attrib()
+    yaml_file_or_str: str = attrib()
     few_shot: str = attrib(default="")
     lowercase: bool = attrib(default=True)
     """
@@ -365,7 +362,7 @@ class Bumpner:
     """
     Sort of a tree structure to encode the hierarchical entity labels.
             The values will be null if it's a terminal node.
-            
+
             Examples:
             ```json
             {
@@ -397,10 +394,13 @@ class Bumpner:
         self.entity_label_tree = {}
         self.entity_name_to_obj = {}
         try:
-            with open(self.yaml_filepath, "r") as f:
-                self.entities: dict = yaml.safe_load(f)
+            if Path(self.yaml_file_or_str).is_file():
+                with open(self.yaml_file_or_str, "r") as f:
+                    self.entities: dict = yaml.safe_load(f)
+            else:
+                self.entities: dict = yaml.safe_load(self.yaml_file_or_str)
         except OSError:
-            self.entities: dict = yaml.safe_load(self.yaml_filepath)
+            self.entities: dict = yaml.safe_load(self.yaml_file_or_str)
         self.keyword_processor = KeywordProcessor(case_sensitive=False)
         self.register_entities(entities=self.entities, lowercase=self.lowercase)
         self._partial_model = self.get_partial_model()
@@ -409,7 +409,7 @@ class Bumpner:
         text = Text.from_string(text)
         result = (
             self._partial_model
-            + inference_prompt(text=text)
+            + inference_prompt(text=text) # type: ignore
             + capture(
                 constrained_ner(
                     text=text,
@@ -419,7 +419,7 @@ class Bumpner:
                     keyword_to_entity_label=self.keyword_to_entity_label,
                     pattern_to_entity_label=self.pattern_to_entity_label,
                     skip_stopwords=self.skip_stopwords,
-                ),
+                ), # type: ignore
                 "result",
             )
         ).get("result")
@@ -442,7 +442,7 @@ class Bumpner:
         return _model + intro_prompt(
             [self.entity_name_to_obj.get(name) for name in top_level_entities],
             few_shot=self.few_shot,
-        )
+        ) # type: ignore
 
     def register_entities(self, entities: dict, lowercase: bool = True) -> None:
         """Prepare entities into the necessary data structures."""
